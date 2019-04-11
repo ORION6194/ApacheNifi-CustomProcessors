@@ -80,52 +80,49 @@ public class ProcessorUtils {
         return jsonArray;
     } // end main
 
-    public static void main(String[] args){
+//    public static void main(String[] args){
 //        JsonArray jsonArray = ReadOmniSciTableJDBC("flights_2008_7M","origin_city AS \"Origin\", dest_city AS \"Destination\", AVG(airtime) AS \"Average Airtime\"","WHERE distance < 175 GROUP BY origin_city, dest_city",100,0 );
 //        System.out.println(jsonArray.size());
-        String jsonInput = "[{'arr_timestamp':'2017-04-23 06:30:0','dep_timestamp':'2017-04-23 07:45:00','uniquecarrier':'Southwest'},{'arr_timestamp':'2017-04-23 06:50:0','dep_timestamp':'2017-04-23 09:45:00','uniquecarrier':'American'},{'arr_timestamp':'2017-04-23 09:30:0','dep_timestamp':'2017-04-23 12:45:00','uniquecarrier':'United'}]";
-        InsertIntoOmnisciTableJDBC("kickFlights",new JsonParser().parse(jsonInput).getAsJsonArray());
-    }
+//        String jsonInput = "[{'arr_timestamp':'2017-04-23 06:30:0','dep_timestamp':'2017-04-23 07:45:00','uniquecarrier':'Southwest'},{'arr_timestamp':'2017-04-23 06:50:0','dep_timestamp':'2017-04-23 09:45:00','uniquecarrier':'American'},{'arr_timestamp':'2017-04-23 09:30:0','dep_timestamp':'2017-04-23 12:45:00','uniquecarrier':'United'}]";
+//        InsertIntoOmnisciTableJDBC("kickFlights",new JsonParser().parse(jsonInput).getAsJsonArray());
+//    }
 
     public static String InsertIntoOmnisciTableJDBC(String tableName, JsonArray jsonArr){
         Connection conn = null;
         Statement stmt = null;
-        int k=0;
         try{
             // STEP 1: Register JDBC driver
             Class.forName(JDBC_DRIVER);
-            k++;
+
             // STEP 2: Open a connection
             conn = DriverManager.getConnection(DB_URL, USER, PASS);
-            k++;
+
             // STEP 3: Execute a query
             stmt = conn.createStatement();
             String createTableStmt = "CREATE table IF NOT EXISTS "+tableName+"(arr_timestamp TIMESTAMP(0), dep_timestamp TIMESTAMP(0), uniquecarrier TEXT ENCODING DICT(32))";
-            k++;
+
             stmt.executeUpdate(createTableStmt);
             String preparedSQL = "insert into "+tableName+" values(?, ?, ?)";
-            k++;
+
             PreparedStatement pStmt = conn.prepareStatement(preparedSQL);
             for(int i=0;i<jsonArr.size();i++){
-                k++;
                 pStmt.setTimestamp(1, Timestamp.valueOf(jsonArr.get(i).getAsJsonObject().get("arr_timestamp").getAsString()));
                 pStmt.setTimestamp(2, Timestamp.valueOf(jsonArr.get(i).getAsJsonObject().get("dep_timestamp").getAsString()));
                 pStmt.setString(3, jsonArr.get(i).getAsJsonObject().get("uniquecarrier").getAsString());
                 pStmt.addBatch();
             }
             pStmt.executeBatch();
-            k++;
             pStmt.close();
             stmt.close();
             conn.close();
         } catch (SQLException se) {
             // Handle errors for JDBC
             se.printStackTrace();
-            return se.getMessage()+"--JDBC";
+            return se.getMessage();
         } catch (Exception e) {
             // Handle errors for Class.forName
             e.printStackTrace();
-            return e.getMessage()+"--Class.forName--"+k;
+            return e.getMessage();
         } finally {
             // finally block used to close resources
             try {
@@ -140,7 +137,7 @@ public class ProcessorUtils {
                 }
             } catch (SQLException se) {
                 se.printStackTrace();
-                return se.getMessage()+"--inFinally";
+                return se.getMessage();
             } // end finally try
         } // end try
         return "Success";

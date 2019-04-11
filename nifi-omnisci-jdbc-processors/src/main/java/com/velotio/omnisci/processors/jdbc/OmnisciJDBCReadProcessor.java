@@ -44,7 +44,7 @@ import java.util.*;
 
 
 @Tags({"Omnisci","JDBC","READ"})
-@CapabilityDescription("Provide a description")
+@CapabilityDescription("This Processor reads an SQL query elements from JSON input file, fetches the data from Omnisci DB and then output the resultset in JSON Array format")
 @SeeAlso({})
 @ReadsAttributes({@ReadsAttribute(attribute="", description="")})
 @WritesAttributes({@WritesAttribute(attribute="", description="")})
@@ -117,12 +117,8 @@ public class OmnisciJDBCReadProcessor extends AbstractProcessor {
             final String inputContentString = new String(byteBuffer, 0, byteBuffer.length, Charset.forName("UTF-8"));
             JsonObject inputJsonObject = new Gson().fromJson(inputContentString,JsonObject.class);
 
-            flowFile = session.putAttribute(flowFile, "InputElements",inputJsonObject.toString());
-            String sql = "SELECT "+inputJsonObject.get("selArgs").getAsString()+" from "+inputJsonObject.get("table").getAsString()
-                    +" "+ inputJsonObject.get("whereArgs").getAsString() + " limit "+inputJsonObject.get("limit").getAsInt() +" offset "+inputJsonObject.get("offset").getAsInt();
             JsonArray response = ProcessorUtils.ReadOmniSciTableJDBC(inputJsonObject.get("table").getAsString(),inputJsonObject.get("selArgs").getAsString(),inputJsonObject.get("whereArgs").getAsString(),inputJsonObject.get("limit").getAsInt(), inputJsonObject.get("offset").getAsInt());
 
-            flowFile = session.putAttribute(flowFile, "JSONArrayOutput",response.toString()+"");
             // write the processed data in the content of the output flow file
             flowFile = session.write(flowFile, new OutputStreamCallback() {
                 @Override
@@ -131,8 +127,6 @@ public class OmnisciJDBCReadProcessor extends AbstractProcessor {
                 }
             });
             flowFile = session.putAttribute(flowFile, "mime.type","application/json");
-            flowFile = session.putAttribute(flowFile, "JSONArrayLength",response.size()+"");
-            flowFile = session.putAttribute(flowFile, "OmnisciQuery",sql);
             session.getProvenanceReporter().modifyContent(flowFile);
             session.transfer(flowFile, SUCCESS);
         }catch (Exception e){

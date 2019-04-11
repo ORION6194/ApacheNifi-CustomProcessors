@@ -52,7 +52,7 @@ import java.util.List;
 import java.util.Set;
 
 @Tags({"Omnisci","JDBC","INSERT"})
-@CapabilityDescription("Provide a description")
+@CapabilityDescription("This Processor takes a JSON Array as an Input and Inserts the data into OmnisciDB in batches using JDBC Prepared statements")
 @SeeAlso({})
 @ReadsAttributes({@ReadsAttribute(attribute="", description="")})
 @WritesAttributes({@WritesAttribute(attribute="", description="")})
@@ -133,17 +133,13 @@ public class OmnisciJDBCInsertProcessor extends AbstractProcessor {
 
             // convert the content into a JSON object
             final String contentString = new String(byteBuffer, 0, byteBuffer.length, Charset.forName("UTF-8"));
-            JsonParser parser = new JsonParser();
-            JsonArray jsonArr = parser.parse(contentString).getAsJsonArray();
-            flowFile = session.putAttribute(flowFile, "Table_Name", context.getProperty("TABLE_NAME").getValue());
+
+            JsonArray jsonArr = new JsonParser().parse(contentString).getAsJsonArray();
+
             //Insert into the OmnisciDB
+            String returnResponse = ProcessorUtils.InsertIntoOmnisciTableJDBC(context.getProperty("TABLE_NAME").getValue(),jsonArr);
 
-            String returnResponse = ProcessorUtils.InsertIntoOmnisciTableJDBC("newflights",jsonArr);
-            flowFile = session.putAttribute(flowFile, "jsonInput",jsonArr.toString());
             flowFile = session.putAttribute(flowFile, "JDBCOutput",returnResponse);
-//            ProcessorUtils.InsertIntoOmnisciTableJDBC(context.getProperty("TABLE_NAME").getValue(),jsonArr);
-
-//            flowFile = session.putAttribute(flowFile, "mime.type", "application/json");
             session.getProvenanceReporter().modifyContent(flowFile);
             session.transfer(flowFile, SUCCESS);
         }catch (Exception e){
