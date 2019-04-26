@@ -19,7 +19,7 @@ package com.velotio.omnisci.processors.jdbc;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import com.velotio.omnisci.utils.ProcessorUtils;
+import com.velotio.omnisci.utils.db.ProcessorUtils;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
 import org.apache.nifi.annotation.behavior.ReadsAttributes;
 import org.apache.nifi.annotation.behavior.WritesAttribute;
@@ -43,12 +43,12 @@ import java.nio.charset.Charset;
 import java.util.*;
 
 
-@Tags({"Omnisci","JDBC","READ"})
+@Tags({"Omnisci","JDBC","JSON","READ"})
 @CapabilityDescription("This Processor reads an SQL query elements from JSON input file, fetches the data from Omnisci DB and then output the resultset in JSON Array format")
 @SeeAlso({})
 @ReadsAttributes({@ReadsAttribute(attribute="", description="")})
 @WritesAttributes({@WritesAttribute(attribute="", description="")})
-public class OmnisciJDBCReadProcessor extends AbstractProcessor {
+public class OmnisciJDBCReadJSONProcessor extends AbstractProcessor {
 
    /* public static final PropertyDescriptor LINE_BATCH_SIZE = new PropertyDescriptor
             .Builder().name("LINE_BATCH_SIZE")

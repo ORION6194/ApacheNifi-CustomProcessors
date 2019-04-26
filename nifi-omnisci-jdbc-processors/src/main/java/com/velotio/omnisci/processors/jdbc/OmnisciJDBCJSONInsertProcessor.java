@@ -16,10 +16,9 @@
  */
 package com.velotio.omnisci.processors.jdbc;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonParser;
-import com.velotio.omnisci.utils.ProcessorUtils;
+import com.velotio.omnisci.utils.db.ProcessorUtils;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
 import org.apache.nifi.annotation.behavior.ReadsAttribute;
@@ -51,12 +50,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-@Tags({"Omnisci","JDBC","INSERT"})
+@Tags({"Omnisci","JDBC","JSON","INSERT"})
 @CapabilityDescription("This Processor takes a JSON Array as an Input and Inserts the data into OmnisciDB in batches using JDBC Prepared statements")
 @SeeAlso({})
 @ReadsAttributes({@ReadsAttribute(attribute="", description="")})
 @WritesAttributes({@WritesAttribute(attribute="", description="")})
-public class OmnisciJDBCInsertProcessor extends AbstractProcessor {
+public class OmnisciJDBCJSONInsertProcessor extends AbstractProcessor {
 
     public static final PropertyDescriptor TABLE_NAME = new PropertyDescriptor
             .Builder().name("TABLE_NAME")

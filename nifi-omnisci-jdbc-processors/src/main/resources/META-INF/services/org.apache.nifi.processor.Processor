@@ -12,5 +12,5 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-com.velotio.omnisci.processors.jdbc.OmnisciJDBCInsertProcessor
-com.velotio.omnisci.processors.jdbc.OmnisciJDBCReadProcessor
+com.velotio.omnisci.processors.jdbc.OmnisciJDBCJSONInsertProcessor
+com.velotio.omnisci.processors.jdbc.OmnisciJDBCReadJSONProcessor

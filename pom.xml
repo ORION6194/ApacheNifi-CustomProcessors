@@ -31,5 +31,11 @@
         <module>nifi-omnisci-jdbc-processors</module>
         <module>nifi-omnisci-jdbc-nar</module>
     </modules>
-
+    <dependencies>
+        <dependency>
+            <groupId>com.velotio</groupId>
+            <artifactId>omnisci_thrift_client</artifactId>
+            <version>1.0.0-SNAPSHOT</version>
+        </dependency>
+    </dependencies>
 </project>

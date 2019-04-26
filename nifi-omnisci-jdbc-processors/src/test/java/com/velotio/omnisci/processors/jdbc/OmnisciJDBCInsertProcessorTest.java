@@ -16,11 +16,16 @@
  */
 package com.velotio.omnisci.processors.jdbc;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonParser;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
 
+import static com.velotio.omnisci.utils.db.ProcessorUtils.InsertIntoOmnisciTableJDBC;
+import static com.velotio.omnisci.utils.db.ProcessorUtils.ReadOmniSciTableJDBC;
+import static org.junit.Assert.*;
 
 public class OmnisciJDBCInsertProcessorTest {
 
@@ -28,12 +33,16 @@ public class OmnisciJDBCInsertProcessorTest {
 
     @Before
     public void init() {
-        testRunner = TestRunners.newTestRunner(OmnisciJDBCInsertProcessor.class);
+        testRunner = TestRunners.newTestRunner(OmnisciJDBCJSONInsertProcessor.class);
     }
 
     @Test
     public void testProcessor() {
-
+        JsonArray jsonBeforeArr = ReadOmniSciTableJDBC("testFlights","*","",0, 0);
+        String jsonInput = "[{'arr_timestamp':'2017-04-23 06:30:0','dep_timestamp':'2017-04-23 07:45:00','uniquecarrier':'Southwest'},{'arr_timestamp':'2017-04-23 06:50:0','dep_timestamp':'2017-04-23 09:45:00','uniquecarrier':'American'},{'arr_timestamp':'2017-04-23 09:30:0','dep_timestamp':'2017-04-23 12:45:00','uniquecarrier':'United'}]";
+        InsertIntoOmnisciTableJDBC("testFlights",new JsonParser().parse(jsonInput).getAsJsonArray());
+        JsonArray jsonAfterArr = ReadOmniSciTableJDBC("testFlights","*","",0, 0);
+        assertEquals(jsonBeforeArr.size()+3,jsonAfterArr.size());
     }
 
 }

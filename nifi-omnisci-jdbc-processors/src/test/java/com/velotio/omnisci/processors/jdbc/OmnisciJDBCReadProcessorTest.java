@@ -16,10 +16,14 @@
  */
 package com.velotio.omnisci.processors.jdbc;
 
+import com.google.gson.JsonArray;
 import org.apache.nifi.util.TestRunner;
 import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
+import static org.junit.Assert.*;
+
+import static com.velotio.omnisci.utils.db.ProcessorUtils.ReadOmniSciTableJDBC;
 
 
 public class OmnisciJDBCReadProcessorTest {
@@ -28,12 +32,13 @@ public class OmnisciJDBCReadProcessorTest {
 
     @Before
     public void init() {
-        testRunner = TestRunners.newTestRunner(OmnisciJDBCReadProcessor.class);
+        testRunner = TestRunners.newTestRunner(OmnisciJDBCReadJSONProcessor.class);
     }
 
     @Test
     public void testProcessor() {
-
+        JsonArray jsonArray = ReadOmniSciTableJDBC("flights_2008_7M","origin_city AS \"Origin\", dest_city AS \"Destination\", AVG(airtime) AS \"Average Airtime\"","WHERE distance < 175 GROUP BY origin_city, dest_city",100,0 );
+        assertEquals(100,jsonArray.size());
     }
 
 }
