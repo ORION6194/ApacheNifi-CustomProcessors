@@ -14,3 +14,4 @@
 # limitations under the License.
 com.velotio.omnisci.processors.jdbc.OmnisciJDBCJSONInsertProcessor
 com.velotio.omnisci.processors.jdbc.OmnisciJDBCReadJSONProcessor
+com.velotio.omnisci.processors.jdbc.OmnisciJDBCInsertProcessor

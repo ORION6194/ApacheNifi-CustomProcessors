@@ -16,8 +16,7 @@
  */
 package com.velotio.omnisci.processors.jdbc;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonParser;
+import com.google.gson.*;
 import com.velotio.omnisci.utils.db.ProcessorUtils;
 import org.apache.nifi.components.PropertyDescriptor;
 import org.apache.nifi.flowfile.FlowFile;
@@ -57,6 +56,27 @@ import java.util.Set;
 @WritesAttributes({@WritesAttribute(attribute="", description="")})
 public class OmnisciJDBCJSONInsertProcessor extends AbstractProcessor {
 
+    public static final PropertyDescriptor USER_NAME = new PropertyDescriptor
+            .Builder().name("USER_NAME")
+            .displayName("UserName")
+            .description("UserName for the Omnisci DB")
+            .required(true)
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .build();
+    public static final PropertyDescriptor PASSWORD = new PropertyDescriptor
+            .Builder().name("PASSWORD")
+            .displayName("Password")
+            .description("Password for the Omnisci DB")
+            .required(true)
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .build();
+    public static final PropertyDescriptor DB_URL = new PropertyDescriptor
+            .Builder().name("DB_URL")
+            .displayName("DB Host URL Details")
+            .description("Hostname and Port No for the Omnisci DB. Ex: 'jdbc:omnisci:<hostname>:<port>:<database name>'")
+            .required(true)
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .build();
     public static final PropertyDescriptor TABLE_NAME = new PropertyDescriptor
             .Builder().name("TABLE_NAME")
             .displayName("Table Name")
@@ -64,13 +84,30 @@ public class OmnisciJDBCJSONInsertProcessor extends AbstractProcessor {
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
+    public static final PropertyDescriptor CREATE_NEW_TABLE = new PropertyDescriptor
+            .Builder().name("CREATE_NEW_TABLE")
+            .displayName("Create New Table")
+            .description("A boolean value to determine if a new table needs to be created or not")
+            .allowableValues("TRUE","FALSE")
+            .required(true)
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .build();
+
     public static final PropertyDescriptor TABLE_SCHEMA = new PropertyDescriptor
             .Builder().name("TABLE_SCHEMA")
             .displayName("Table Schema")
             .description("Schema of the table in which to insert the data")
-            .required(true)
+            .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
+
+    public static final PropertyDescriptor OMNISCI_INSERT_BATCH_SIZE = new PropertyDescriptor
+            .Builder().name("OMNISCI_INSERT_BATCH_SIZE")
+            .displayName("Omnisci Insert Batch Size")
+            .description("Batch size for the Omnisci JDBC Prepared Statement")
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .build();
+
 
     public static final Relationship SUCCESS = new Relationship.Builder()
             .name("SUCCESS")
@@ -89,8 +126,13 @@ public class OmnisciJDBCJSONInsertProcessor extends AbstractProcessor {
     @Override
     protected void init(final ProcessorInitializationContext context) {
         final List<PropertyDescriptor> descriptors = new ArrayList<PropertyDescriptor>();
+        descriptors.add(DB_URL);
+        descriptors.add(USER_NAME);
+        descriptors.add(PASSWORD);
         descriptors.add(TABLE_NAME);
         descriptors.add(TABLE_SCHEMA);
+        descriptors.add(OMNISCI_INSERT_BATCH_SIZE);
+        descriptors.add(CREATE_NEW_TABLE);
         this.descriptors = Collections.unmodifiableList(descriptors);
 
         final Set<Relationship> relationships = new HashSet<Relationship>();
@@ -121,6 +163,18 @@ public class OmnisciJDBCJSONInsertProcessor extends AbstractProcessor {
             return;
         }
         try {
+            final String createNewTable = context.getProperty("CREATE_NEW_TABLE").getValue();
+            final String tableName = context.getProperty("TABLE_NAME").getValue();
+            final String tableSchema = context.getProperty("TABLE_SCHEMA").getValue();
+            final String userName = context.getProperty("USER_NAME").getValue();
+            final String password = context.getProperty("PASSWORD").getValue();
+            final String dbURL = context.getProperty("DB_URL").getValue();
+            final int insertBatchSize = Integer.parseInt(context.getProperty("OMNISCI_INSERT_BATCH_SIZE").getValue());
+
+            if(createNewTable.equals("TRUE") && (tableSchema==null || tableSchema.equals(""))){
+                throw new Exception("'Table Schema' value is Required when 'Create New Table' field is set to 'TRUE'");
+            }
+
             // reading all the content of the input flow file
             final byte[] byteBuffer = new byte[(int) flowFile.getSize()];
             session.read(flowFile, new InputStreamCallback() {
@@ -132,13 +186,18 @@ public class OmnisciJDBCJSONInsertProcessor extends AbstractProcessor {
 
             // convert the content into a JSON object
             final String contentString = new String(byteBuffer, 0, byteBuffer.length, Charset.forName("UTF-8"));
-
-            JsonArray jsonArr = new JsonParser().parse(contentString).getAsJsonArray();
-
-            //Insert into the OmnisciDB
-            String returnResponse = ProcessorUtils.InsertIntoOmnisciTableJDBC(context.getProperty("TABLE_NAME").getValue(),jsonArr);
-
-            flowFile = session.putAttribute(flowFile, "JDBCOutput",returnResponse);
+            try {
+                JsonArray jsonArr = new JsonParser().parse(contentString).getAsJsonArray();
+                //Insert into the OmnisciDB
+                String returnResponse = ProcessorUtils.InsertIntoOmnisciTableJDBC(insertBatchSize, tableName, createNewTable, tableSchema, jsonArr, userName, password, dbURL);
+                flowFile = session.putAttribute(flowFile, "JDBCArrOutput",returnResponse);
+            }catch (IllegalStateException ise){
+                JsonArray jsonArr = new JsonArray();
+                JsonObject jsonObj = new JsonParser().parse(contentString).getAsJsonObject();
+                jsonArr.add(jsonObj);
+                String returnResponse = ProcessorUtils.InsertIntoOmnisciTableJDBC(insertBatchSize, tableName, createNewTable, tableSchema, jsonArr, userName, password, dbURL);
+                flowFile = session.putAttribute(flowFile, "JDBCObjOutput",returnResponse);
+            }
             session.getProvenanceReporter().modifyContent(flowFile);
             session.transfer(flowFile, SUCCESS);
         }catch (Exception e){

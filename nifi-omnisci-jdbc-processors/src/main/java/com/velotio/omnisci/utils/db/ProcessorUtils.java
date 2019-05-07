@@ -1,17 +1,18 @@
 package com.velotio.omnisci.utils.db;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
+import com.google.gson.*;
+
 import java.sql.*;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
+import java.sql.Date;
+import java.util.*;
 
 import com.omnisci.jdbc.OmniSciConnection;
 import com.omnisci.jdbc.OmniSciDriver;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ProcessorUtils {
+//    private static final Logger LOG = LoggerFactory.getLogger(ProcessorUtils.class);
     // JDBC driver name and database URL
     static final String JDBC_DRIVER = "com.omnisci.jdbc.OmniSciDriver";
     static final String DB_URL = "jdbc:omnisci:localhost:6274:mapd";
@@ -90,9 +91,9 @@ public class ProcessorUtils {
         return jsonArray;
     } // end main
 
-    public static String InsertIntoOmnisciTableJDBC(String tableName, JsonArray jsonArr){
+    public static String InsertIntoOmnisciTableJDBC(int insertBatchSize, String tableName, String isCreateTable, String tableSchema, JsonArray jsonArr, String userName, String password, String dbURL){
         Connection conn = null;
-        Statement stmt = null;
+        PreparedStatement pStmt = null;
         try{
             // STEP 1: Register JDBC driver
             Class.forName(JDBC_DRIVER);
@@ -100,21 +101,88 @@ public class ProcessorUtils {
             // STEP 2: Open a connection
             conn = DriverManager.getConnection(DB_URL, USER, PASS);
 
-            // STEP 3: Execute a query
-            stmt = conn.createStatement();
-            String createTableStmt = "CREATE table IF NOT EXISTS "+tableName+"(arr_timestamp TIMESTAMP(0), dep_timestamp TIMESTAMP(0), uniquecarrier TEXT ENCODING DICT(32))";
-
-            stmt.executeUpdate(createTableStmt);
-            String preparedSQL = "insert into "+tableName+" values(?, ?, ?)";
-
-            PreparedStatement pStmt = conn.prepareStatement(preparedSQL);
-            for(int i=0;i<jsonArr.size();i++){
-                pStmt.setTimestamp(1, Timestamp.valueOf(jsonArr.get(i).getAsJsonObject().get("arr_timestamp").getAsString()));
-                pStmt.setTimestamp(2, Timestamp.valueOf(jsonArr.get(i).getAsJsonObject().get("dep_timestamp").getAsString()));
-                pStmt.setString(3, jsonArr.get(i).getAsJsonObject().get("uniquecarrier").getAsString());
-                pStmt.addBatch();
+            // STEP 3: Execute a create table query
+            if(isCreateTable.equalsIgnoreCase("TRUE") && tableSchema!=null && !tableSchema.equals("")) {
+                Statement stmt = null;
+                stmt = conn.createStatement();
+                String createTableStmt = "CREATE table IF NOT EXISTS " + tableName + "(" + tableSchema + ")";
+                stmt.executeUpdate(createTableStmt);
+                stmt.close();
+//                LOG.info("New Table "+tableName+" created successfully!");
             }
-            pStmt.executeBatch();
+
+            //STEP 4: Create a Prepared Statement
+            String sqlStatement = "SELECT * from "+tableName+" limit 1";
+            Statement stmt = conn.createStatement();
+            ResultSet rtst = stmt.executeQuery(sqlStatement);
+            ResultSetMetaData rsmd = rtst.getMetaData();
+            int dbColCount = rsmd.getColumnCount();
+
+            String sqlInsertIntoOmnisciDB = "INSERT INTO "+tableName+" values(";
+            for(int i=0;i<dbColCount;i++){
+                if(i>0)
+                    sqlInsertIntoOmnisciDB = sqlInsertIntoOmnisciDB+", ?";
+                else
+                    sqlInsertIntoOmnisciDB = sqlInsertIntoOmnisciDB+"?";
+            }
+            sqlInsertIntoOmnisciDB = sqlInsertIntoOmnisciDB+")";
+            pStmt = conn.prepareStatement(sqlInsertIntoOmnisciDB);
+            int insertCount = 0;
+            for(int i=0;i<jsonArr.size();i++) {
+                JsonObject jsonInputObj = jsonArr.get(i).getAsJsonObject();
+                Set<Map.Entry<String, JsonElement>> entries = jsonInputObj.entrySet();
+                if(entries.size()!=dbColCount){
+                    throw new Exception("Input Data does not match Table Schema");
+                }
+                for(int j=1;j<=dbColCount;j++) {
+                    for (Map.Entry<String, JsonElement> entry : entries) {
+                        if(entry.getKey().equals(rsmd.getColumnName(j))) {
+                            switch (rsmd.getColumnTypeName(j)) {
+                                case "SMALLINT":
+                                    pStmt.setInt(j, entry.getValue().getAsInt());
+                                    break;
+                                case "BIGINT":
+                                    pStmt.setInt(j, entry.getValue().getAsInt());
+                                    break;
+                                case "TIMESTAMP":
+                                    pStmt.setTimestamp(j, Timestamp.valueOf(entry.getValue().getAsString()));
+                                    break;
+                                case "DATE":
+                                    pStmt.setDate(j, Date.valueOf(entry.getValue().getAsString()));
+                                    break;
+                                case "FLOAT":
+                                    pStmt.setFloat(j, entry.getValue().getAsFloat());
+                                    break;
+                                case "LONG":
+                                    pStmt.setLong(j, entry.getValue().getAsLong());
+                                    break;
+                                case "STRING":
+                                    pStmt.setString(j, entry.getValue().getAsString());
+                                    break;
+                                case "VARCHAR":
+                                    pStmt.setString(j, entry.getValue().getAsString());
+                                    break;
+                                case "STR":
+                                    pStmt.setString(j, entry.getValue().getAsString());
+                                    break;
+                                default:
+                                    throw new Exception("Received Unhandled DataType in Input - " + rsmd.getColumnTypeName(j));
+                            }
+                        }
+                    }
+                }
+                pStmt.addBatch();
+                insertCount++;
+                if(insertCount%insertBatchSize==0){
+                    pStmt.executeBatch();
+                    pStmt.clearBatch();
+                    insertCount=0;
+                }
+            }
+            if(insertCount>0){
+                pStmt.executeBatch();
+                pStmt.clearBatch();
+            }
             pStmt.close();
             stmt.close();
             conn.close();
@@ -129,8 +197,8 @@ public class ProcessorUtils {
         } finally {
             // finally block used to close resources
             try {
-                if (stmt != null) {
-                    stmt.close();
+                if (pStmt != null) {
+                    pStmt.close();
                 }
             } catch (SQLException se2) {
             } // nothing we can do
@@ -146,7 +214,7 @@ public class ProcessorUtils {
         return "Success";
     }
 
-    public static String InsertIntoOmnisciTableJDBC(String tableName, String isCreateTable, String tableSchema, List<String> inputDataArr, String fileDelimiter, String userName, String password, String dbURL){
+    public static String InsertIntoOmnisciTableJDBC(int insertBatchSize, String tableName, String isCreateTable, String tableSchema, List<String> inputDataArr, String fileDelimiter, String userName, String password, String dbURL, String inputDataType){
         Connection conn = null;
         PreparedStatement pStmt = null;
         try{
@@ -157,110 +225,151 @@ public class ProcessorUtils {
             conn = DriverManager.getConnection(dbURL, userName, password);
 
             // STEP 3: Execute a create table query
-            if(isCreateTable.equalsIgnoreCase("TRUE")) {
+            if(isCreateTable.equalsIgnoreCase("TRUE") && tableSchema!=null && !tableSchema.equals("")) {
                 Statement stmt = null;
                 stmt = conn.createStatement();
                 String createTableStmt = "CREATE table IF NOT EXISTS " + tableName + "(" + tableSchema + ")";
                 stmt.executeUpdate(createTableStmt);
                 stmt.close();
+//                LOG.info("New Table "+tableName+" created successfully!");
             }
 
             //STEP 4: Create a Prepared Statement
-            String preparedSQL = "insert into "+tableName+" values";
-            String[] tableSchemaCols = tableSchema.split(", ");
-            for (int c=0; c< tableSchemaCols.length;c++) {
-                if(c>0)
-                    preparedSQL = preparedSQL.concat(", ?");
+            String sqlStatement = "SELECT * from "+tableName+" limit 1";
+            Statement stmt = conn.createStatement();
+            ResultSet rtst = stmt.executeQuery(sqlStatement);
+            ResultSetMetaData rsmd = rtst.getMetaData();
+            int dbColCount = rsmd.getColumnCount();
+
+            String sqlInsertIntoOmnisciDB = "INSERT INTO "+tableName+" values(";
+            for(int i=0;i<dbColCount;i++){
+                if(i>0)
+                    sqlInsertIntoOmnisciDB = sqlInsertIntoOmnisciDB+", ?";
                 else
-                    preparedSQL = preparedSQL.concat("(?");
+                    sqlInsertIntoOmnisciDB = sqlInsertIntoOmnisciDB+"?";
             }
-            preparedSQL = preparedSQL.concat(")");
-            pStmt = conn.prepareStatement(preparedSQL);
+            sqlInsertIntoOmnisciDB = sqlInsertIntoOmnisciDB+")";
+            pStmt = conn.prepareStatement(sqlInsertIntoOmnisciDB);
 
             //STEP 5: Add data to the prepared Statement
-            for(int i=0;i<inputDataArr.size();i++){
-                String[] inputRow = inputDataArr.get(i).split(fileDelimiter);
-                if(inputRow.length!=tableSchemaCols.length){
-                    continue;
+            if(inputDataType.equals("Delimited")){
+                for(int i=0;i<inputDataArr.size();i++){
+                    String[] inputDataRow = inputDataArr.get(i).split(fileDelimiter);
+                    if(dbColCount != inputDataRow.length){
+                        throw new Exception("Input Data does not match Table Schema");
+                    }
+                    for(int j=1;j<=dbColCount;j++){
+                        switch(rsmd.getColumnTypeName(j)){
+                            case "SMALLINT":
+                                pStmt.setInt(j,Integer.parseInt(inputDataRow[j-1].trim()));
+                                break;
+                            case "BIGINT":
+                                pStmt.setInt(j,Integer.parseInt(inputDataRow[j-1].trim()));
+                                break;
+                            case "TIMESTAMP":
+                                pStmt.setTimestamp(j,Timestamp.valueOf(inputDataRow[j-1].trim()));
+                                break;
+                            case "DATE":
+                                pStmt.setDate(j,Date.valueOf(inputDataRow[j-1].trim()));
+                                break;
+                            case "FLOAT":
+                                pStmt.setFloat(j,Float.parseFloat(inputDataRow[j-1].trim()));
+                                break;
+                            case "LONG":
+                                pStmt.setLong(j,Long.parseLong(inputDataRow[j-1].trim()));
+                                break;
+                            case "STRING":
+                                pStmt.setString(j,inputDataRow[j-1].trim());
+                                break;
+                            case "VARCHAR":
+                                pStmt.setString(j,inputDataRow[j-1].trim());
+                                break;
+                            case "STR":
+                                pStmt.setString(j,inputDataRow[j-1].trim());
+                                break;
+                            default:
+                                throw new Exception("Received Unhandled DataType in Input - "+rsmd.getColumnTypeName(j));
+
+                        }
+                    }
+                    pStmt.addBatch();
+                    if(i%insertBatchSize==0){
+                        pStmt.executeBatch();
+                        pStmt.clearBatch();
+                    }
                 }
-                for(int j=0; j<tableSchemaCols.length;j++){
-                    if(tableSchemaCols[i].toUpperCase().contains("SMALLINT")){
-                        pStmt.setInt(i, Integer.parseInt(inputRow[i].trim()));
+            }
+            else if(inputDataType.equals("JSON")){
+                for(int i=0;i<inputDataArr.size();i++) {
+                    JsonObject jsonInputObj = new JsonParser().parse(inputDataArr.get(i)).getAsJsonObject();
+                    Set<Map.Entry<String, JsonElement>> entries = jsonInputObj.entrySet();
+                    if(entries.size()!=dbColCount){
+                        throw new Exception("Input Data does not match Table Schema");
                     }
-                    else if(tableSchemaCols[i].toUpperCase().contains("TINYINT")){
-                        pStmt.setInt(i, Integer.parseInt(inputRow[i].trim()));
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("INT")){
-                        pStmt.setInt(i, Integer.parseInt(inputRow[i].trim()));
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("BIGINT")){
-                        pStmt.setLong(i, Long.parseLong(inputRow[i].trim()));
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("FLOAT")){
-                        pStmt.setFloat(i, Float.parseFloat(inputRow[i].trim()));
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("DECIMAL")){
-                        pStmt.setFloat(i, Float.parseFloat(inputRow[i].trim()));
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("DOUBLE")){
-                        pStmt.setDouble(i, Double.parseDouble(inputRow[i].trim()));
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("STR")){
-                        pStmt.setString(i, inputRow[i].trim());
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("TIMESTAMP")){
-                        pStmt.setTimestamp(i, Timestamp.valueOf(inputRow[i].trim()));
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("DATE")){
-                        pStmt.setDate(i, Date.valueOf(inputRow[i].trim()));
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("BOOL")){
-                        pStmt.setBoolean(i, Boolean.valueOf(inputRow[i].trim()));
-                    }
-                    else {
-                        pStmt.setString(i, inputRow[i].trim());
-                    }
-                    /*
-                    else if(tableSchemaCols[i].toUpperCase().contains("INTERVAL_DAY_TIME")){
-                        pStmt.setFloat(i, Float.parseFloat(inputRow[i].trim()));
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("INTERVAL_YEAR_MONTH")){
+                    for(int j=1;j<=dbColCount;j++) {
+                        for (Map.Entry<String, JsonElement> entry : entries) {
+                            if(entry.getKey().equals(rsmd.getColumnName(j))) {
+                                switch (rsmd.getColumnTypeName(j)) {
+                                    case "SMALLINT":
+                                        pStmt.setInt(j, entry.getValue().getAsInt());
+                                        break;
+                                    case "BIGINT":
+                                        pStmt.setInt(j, entry.getValue().getAsInt());
+                                        break;
+                                    case "TIMESTAMP":
+                                        pStmt.setTimestamp(j, Timestamp.valueOf(entry.getValue().getAsString()));
+                                        break;
+                                    case "DATE":
+                                        pStmt.setDate(j, Date.valueOf(entry.getValue().getAsString()));
+                                        break;
+                                    case "FLOAT":
+                                        pStmt.setFloat(j, entry.getValue().getAsFloat());
+                                        break;
+                                    case "LONG":
+                                        pStmt.setLong(j, entry.getValue().getAsLong());
+                                        break;
+                                    case "STRING":
+                                        pStmt.setString(j, entry.getValue().getAsString());
+                                        break;
+                                    case "VARCHAR":
+                                        pStmt.setString(j, entry.getValue().getAsString());
+                                        break;
+                                    case "STR":
+                                        pStmt.setString(j, entry.getValue().getAsString());
+                                        break;
+                                    default:
+                                        throw new Exception("Received Unhandled DataType in Input - " + rsmd.getColumnTypeName(j));
 
+                                }
+                            }
+                        }
                     }
-                    else if(tableSchemaCols[i].toUpperCase().contains("POINT")){
-
+                    pStmt.addBatch();
+                    if(i%insertBatchSize==0){
+                        pStmt.executeBatch();
+                        pStmt.clearBatch();
                     }
-                    else if(tableSchemaCols[i].toUpperCase().contains("LINESTRING")){
-
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("POLYGON")){
-
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("MULTIPOLYGON")){
-
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("GEOMETRY")){
-
-                    }
-                    else if(tableSchemaCols[i].toUpperCase().contains("GEOGRAPHY")){
-
-                    }*/
-
                 }
-                pStmt.addBatch();
+            }
+            else{
+                throw new Exception("Unhandled Input Data Type received! Please provide data in either Delimited or JSON Object format");
             }
 
             //STEP 6: Execute the Prepared Statement
-            pStmt.executeBatch();
+            if(inputDataArr.size()%insertBatchSize>0) {
+                pStmt.executeBatch();
+            }
             pStmt.close();
             conn.close();
         } catch (SQLException se) {
             // Handle errors for JDBC
             se.printStackTrace();
+//            LOG.error("SQL Exception occurred: ",se);
             return se.getMessage();
         } catch (Exception e) {
-            // Handle errors for Class.forName
+            // Handle errors for Class.forName and user thrown exceptions
             e.printStackTrace();
+//            LOG.error(e.getMessage(),e);
             return e.getMessage();
         } finally {
             // finally block used to close resources

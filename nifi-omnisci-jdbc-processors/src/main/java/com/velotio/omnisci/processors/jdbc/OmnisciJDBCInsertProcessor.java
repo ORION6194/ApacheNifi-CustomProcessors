@@ -37,12 +37,12 @@ import java.util.*;
 
 import static com.velotio.omnisci.utils.db.ProcessorUtils.InsertIntoOmnisciTableJDBC;
 
-@Tags({"Omnisci","JDBC","CSV","INSERT"})
-@CapabilityDescription("This Processor takes a CSV File as an Input and Inserts the data into OmnisciDB in batches using JDBC Prepared statements")
+@Tags({"Omnisci","JDBC","CSV","JSON","INSERT"})
+@CapabilityDescription("This Processor takes a CSV or a JSON File as an Input and Inserts the data into OmnisciDB in batches using JDBC Prepared statements")
 @SeeAlso({})
 @ReadsAttributes({@ReadsAttribute(attribute="", description="")})
 @WritesAttributes({@WritesAttribute(attribute="", description="")})
-public class OmnisciJDBCCSVInsertProcessor extends AbstractProcessor {
+public class OmnisciJDBCInsertProcessor extends AbstractProcessor {
 
     public static final PropertyDescriptor USER_NAME = new PropertyDescriptor
             .Builder().name("USER_NAME")
@@ -80,18 +80,28 @@ public class OmnisciJDBCCSVInsertProcessor extends AbstractProcessor {
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
+
     public static final PropertyDescriptor TABLE_SCHEMA = new PropertyDescriptor
             .Builder().name("TABLE_SCHEMA")
             .displayName("Table Schema")
             .description("Schema of the table in which to insert the data")
-            .required(true)
+            .required(false)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
 
     public static final PropertyDescriptor FILE_DELIMITER = new PropertyDescriptor
             .Builder().name("FILE_DELIMITER")
-            .displayName("File_Delimiter")
-            .description("Value of the Delimiter that separates the values on each line in the input file. Ex: COMMA, TAB, SEMICOLON, PIPE, etc.")
+            .displayName("File Delimiter")
+            .description("Value of the Delimiter that separates the values on each line in the Delimited input file. Ex: COMMA, TAB, SEMICOLON, PIPE, etc.")
+            .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
+            .required(false)
+            .build();
+
+    public static final PropertyDescriptor INPUT_DATA_TYPE = new PropertyDescriptor
+            .Builder().name("INPUT_DATA_TYPE")
+            .displayName("Input Data Type")
+            .description("")
+            .allowableValues("Delimited","JSON")
             .required(true)
             .addValidator(StandardValidators.NON_EMPTY_VALIDATOR)
             .build();
@@ -126,6 +136,7 @@ public class OmnisciJDBCCSVInsertProcessor extends AbstractProcessor {
         descriptors.add(TABLE_NAME);
         descriptors.add(TABLE_SCHEMA);
         descriptors.add(FILE_DELIMITER);
+        descriptors.add(INPUT_DATA_TYPE);
         descriptors.add(OMNISCI_INSERT_BATCH_SIZE);
         descriptors.add(CREATE_NEW_TABLE);
         this.descriptors = Collections.unmodifiableList(descriptors);
@@ -166,7 +177,15 @@ public class OmnisciJDBCCSVInsertProcessor extends AbstractProcessor {
             final String password = context.getProperty("PASSWORD").getValue();
             final String dbURL = context.getProperty("DB_URL").getValue();
             final int insertBatchSize = Integer.parseInt(context.getProperty("OMNISCI_INSERT_BATCH_SIZE").getValue());
+            final String inputFileType = context.getProperty("INPUT_DATA_TYPE").getValue();
 
+            if(createNewTable.equals("TRUE") && (tableSchema==null || tableSchema.equals(""))){
+                throw new Exception("'Table Schema' value is Required when 'Create New Table' field is set to 'TRUE'");
+            }
+            else if(inputFileType.equals("Delimited") && (fileDelimiter==null || fileDelimiter.equals(""))){
+                throw new Exception("'Field Delimiter' value is Required when 'Input File type' field is set to 'Delimited'");
+            }
+            List<String> insertStatuses = new LinkedList<>();
             // reading all the content of the input flow file
             session.read(flowFile, new InputStreamCallback() {
                 @Override
@@ -181,10 +200,17 @@ public class OmnisciJDBCCSVInsertProcessor extends AbstractProcessor {
                                 inputStrList.add(str);
                                 count++;
                                 if(count==insertBatchSize){
-                                    InsertIntoOmnisciTableJDBC(tableName,createNewTable,tableSchema,inputStrList,fileDelimiter,userName,password,dbURL);
+                                    String response = InsertIntoOmnisciTableJDBC(insertBatchSize,tableName,createNewTable,tableSchema,inputStrList,fileDelimiter,userName,password,dbURL,inputFileType);
+                                    insertStatuses.add(response);
                                     count = 0;
                                     inputStrList.clear();
                                 }
+                            }
+                            if(count>0){
+                                String response = InsertIntoOmnisciTableJDBC(insertBatchSize,tableName,createNewTable,tableSchema,inputStrList,fileDelimiter,userName,password,dbURL,inputFileType);
+                                insertStatuses.add(response);
+                                count = 0;
+                                inputStrList.clear();
                             }
                         }
                     } finally {
@@ -194,10 +220,12 @@ public class OmnisciJDBCCSVInsertProcessor extends AbstractProcessor {
                     }
                 }
             });
+            flowFile = session.putAttribute(flowFile, "JDBCOutput",insertStatuses.toString());
             session.getProvenanceReporter().modifyContent(flowFile);
             session.transfer(flowFile, SUCCESS);
         }catch (Exception e){
             String errorMsg = e.getMessage();
+            flowFile = session.putAttribute(flowFile, "JDBCException",e.getMessage());
             // write the processed data in the content of the output flow file
             flowFile = session.write(flowFile, new OutputStreamCallback() {
                 @Override

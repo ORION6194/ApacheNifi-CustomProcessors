@@ -23,6 +23,9 @@ import org.apache.nifi.util.TestRunners;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.LinkedList;
+import java.util.List;
+
 import static com.velotio.omnisci.utils.db.ProcessorUtils.InsertIntoOmnisciTableJDBC;
 import static com.velotio.omnisci.utils.db.ProcessorUtils.ReadOmniSciTableJDBC;
 import static org.junit.Assert.*;
@@ -37,10 +40,44 @@ public class OmnisciJDBCInsertProcessorTest {
     }
 
     @Test
-    public void testProcessor() {
+    public void testJSONArrayInsertProcessor() {
         JsonArray jsonBeforeArr = ReadOmniSciTableJDBC("testFlights","*","",0, 0);
         String jsonInput = "[{'arr_timestamp':'2017-04-23 06:30:0','dep_timestamp':'2017-04-23 07:45:00','uniquecarrier':'Southwest'},{'arr_timestamp':'2017-04-23 06:50:0','dep_timestamp':'2017-04-23 09:45:00','uniquecarrier':'American'},{'arr_timestamp':'2017-04-23 09:30:0','dep_timestamp':'2017-04-23 12:45:00','uniquecarrier':'United'}]";
-        InsertIntoOmnisciTableJDBC("testFlights",new JsonParser().parse(jsonInput).getAsJsonArray());
+        InsertIntoOmnisciTableJDBC(100,"testFlights","FALSE","",new JsonParser().parse(jsonInput).getAsJsonArray(),"mapd","HyperInteractive","jdbc:omnisci:localhost:6274:mapd");
+        JsonArray jsonAfterArr = ReadOmniSciTableJDBC("testFlights","*","",0, 0);
+        assertEquals(jsonBeforeArr.size()+3,jsonAfterArr.size());
+    }
+    @Test
+    public void testJSONObjectInsertProcessor() {
+        JsonArray jsonBeforeArr = ReadOmniSciTableJDBC("testFlights","*","",0, 0);
+        String jsonInput = "{'arr_timestamp':'2017-04-23 06:30:0','dep_timestamp':'2017-04-23 07:45:00','uniquecarrier':'Southwest'}";
+        JsonArray jsonInputArr = new JsonArray();
+        jsonInputArr.add(new JsonParser().parse(jsonInput).getAsJsonObject());
+        InsertIntoOmnisciTableJDBC(100,"testFlights","FALSE","",jsonInputArr,"mapd","HyperInteractive","jdbc:omnisci:localhost:6274:mapd");
+        JsonArray jsonAfterArr = ReadOmniSciTableJDBC("testFlights","*","",0, 0);
+        assertEquals(jsonBeforeArr.size()+1,jsonAfterArr.size());
+    }
+
+    @Test
+    public void testInsertProcessorJSON() {
+        JsonArray jsonBeforeArr = ReadOmniSciTableJDBC("testFlights","*","",0, 0);
+        List<String> jsonInput = new LinkedList<>();
+        jsonInput.add("{'arr_timestamp':'2017-04-23 06:30:0','dep_timestamp':'2017-04-23 07:45:00','uniquecarrier':'Southwest'}");
+        jsonInput.add("{'arr_timestamp':'2017-04-23 06:50:0','dep_timestamp':'2017-04-23 09:45:00','uniquecarrier':'American'}");
+        jsonInput.add("{'arr_timestamp':'2017-04-23 09:30:0','dep_timestamp':'2017-04-23 12:45:00','uniquecarrier':'United'}");
+        InsertIntoOmnisciTableJDBC(100,"testFlights","FALSE","",jsonInput,"","mapd","HyperInteractive","jdbc:omnisci:localhost:6274:mapd","JSON");
+        JsonArray jsonAfterArr = ReadOmniSciTableJDBC("testFlights","*","",0, 0);
+        assertEquals(jsonBeforeArr.size()+3,jsonAfterArr.size());
+    }
+
+    @Test
+    public void testInsertProcessorCSV() {
+        JsonArray jsonBeforeArr = ReadOmniSciTableJDBC("testFlights","*","",0, 0);
+        List<String> jsonInput = new LinkedList<>();
+        jsonInput.add("2017-04-23 06:30:0, 2017-04-23 07:45:00, Southwest");
+        jsonInput.add("2017-04-23 06:50:0, 2017-04-23 09:45:00, American");
+        jsonInput.add("2017-04-23 09:30:0, 2017-04-23 12:45:00, United");
+        InsertIntoOmnisciTableJDBC(100,"testFlights","FALSE","",jsonInput,", ","mapd","HyperInteractive","jdbc:omnisci:localhost:6274:mapd","Delimited");
         JsonArray jsonAfterArr = ReadOmniSciTableJDBC("testFlights","*","",0, 0);
         assertEquals(jsonBeforeArr.size()+3,jsonAfterArr.size());
     }
